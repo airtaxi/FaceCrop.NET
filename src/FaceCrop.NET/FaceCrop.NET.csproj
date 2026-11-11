@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>FaceCrop</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>FaceCrop.NET</PackageId>
+    <Title>FaceCrop.NET</Title>
+    <Version>1.0.0</Version>
+    <Authors>airtaxi</Authors>
+    <Company>airtaxi</Company>
+    <Copyright>Copyright (c) 2026 airtaxi</Copyright>
+    <Description>Face-aware maximum square cropping with an embedded BlazeFace short-range face detector.</Description>
+    <PackageTags>face-detection;crop;blazeface;onnx;imagemagick</PackageTags>
+    <PackageProjectUrl>https://github.com/airtaxi/FaceCrop.NET</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/airtaxi/FaceCrop.NET</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.1.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Models\blaze_face_short_range.onnx" LogicalName="FaceCrop.Models.blaze_face_short_range.onnx" />
+  </ItemGroup>
+
+</Project>

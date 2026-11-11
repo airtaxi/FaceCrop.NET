@@ -1,0 +1,158 @@
+name: Pack and Publish NuGet
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the current package to NuGet.org.
+        required: true
+        default: false
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/pack-and-publish.yml
+      - src/FaceCrop.NET/**
+      - README.md
+      - LICENSE.txt
+      - THIRD-PARTY-NOTICES.md
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: facecrop-pack-and-publish
+  cancel-in-progress: false
+
+jobs:
+  pack-and-publish:
+    name: Pack and Publish NuGet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve publish mode
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $packageId = "FaceCrop.NET"
+          $projectPath = "src/FaceCrop.NET/FaceCrop.NET.csproj"
+
+          function Get-VersionFromProjectXml([string]$projectXml, [string]$source) {
+            [xml]$project = $projectXml -replace "^\uFEFF", ""
+            $version = ($project.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+            if ([string]::IsNullOrWhiteSpace($version)) { throw "Version was not found in $source." }
+            return $version
+          }
+
+          function Get-PreviousProjectVersion([string]$previousCommit, [string]$path) {
+            $previousProjectText = & git show "$previousCommit`:$path" 2>$null
+            if ($LASTEXITCODE -ne 0) { return $null }
+            return Get-VersionFromProjectXml ($previousProjectText -join "`n") "$path at $previousCommit"
+          }
+
+          $currentVersion = Get-VersionFromProjectXml (Get-Content -LiteralPath $projectPath -Raw) $projectPath
+          "current=$currentVersion" >> $env:GITHUB_OUTPUT
+
+          $eventName = "${{ github.event_name }}"
+          if ($eventName -eq "workflow_dispatch") {
+            $shouldPublish = "${{ inputs.publish }}" -eq "true"
+            "run=true" >> $env:GITHUB_OUTPUT
+            "publish=$($shouldPublish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+            if ($shouldPublish) {
+              "Manual run requested NuGet publishing for $packageId $currentVersion."
+            }
+            else {
+              "Manual run will build and pack $packageId $currentVersion without publishing."
+            }
+
+            exit 0
+          }
+
+          $previousCommit = "${{ github.event.before }}"
+          if ([string]::IsNullOrWhiteSpace($previousCommit) -or $previousCommit -match "^0+$") {
+            "run=false" >> $env:GITHUB_OUTPUT
+            "publish=false" >> $env:GITHUB_OUTPUT
+            "No previous commit was available, so NuGet publishing is skipped."
+            exit 0
+          }
+
+          $previousVersion = Get-PreviousProjectVersion $previousCommit $projectPath
+          if ($null -eq $previousVersion) {
+            $shouldPublish = $true
+            $previousVersion = "<new>"
+          }
+          else {
+            $currentSemanticVersion = [System.Management.Automation.SemanticVersion]::Parse($currentVersion)
+            $previousSemanticVersion = [System.Management.Automation.SemanticVersion]::Parse($previousVersion)
+            $shouldPublish = $currentSemanticVersion -gt $previousSemanticVersion
+          }
+
+          "run=$($shouldPublish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "publish=$($shouldPublish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+          if ($shouldPublish) {
+            "Package version changed or package is new. NuGet publishing will continue. Current=$currentVersion Previous=$previousVersion"
+          }
+          else {
+            "Package version did not increase. NuGet publishing is skipped. Current=$currentVersion Previous=$previousVersion"
+          }
+
+      - name: Setup .NET
+        if: steps.version.outputs.run == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        if: steps.version.outputs.run == 'true'
+        run: dotnet build FaceCrop.NET.slnx -c Release
+
+      - name: Pack
+        if: steps.version.outputs.run == 'true'
+        run: dotnet pack src/FaceCrop.NET/FaceCrop.NET.csproj -c Release -p:ContinuousIntegrationBuild=true --output artifacts/packages
+
+      - name: Validate package
+        if: steps.version.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_path="artifacts/packages/FaceCrop.NET.${{ steps.version.outputs.current }}.nupkg"
+          if [ ! -f "$package_path" ]; then
+            echo "Missing expected package: $package_path" >&2
+            exit 1
+          fi
+
+      - name: Log in to NuGet.org
+        id: nuget-login
+        if: steps.version.outputs.publish == 'true'
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish package to NuGet.org
+        if: steps.version.outputs.publish == 'true'
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NUGET_API_KEY:-}" ]; then
+            echo "NuGet login did not return a temporary API key." >&2
+            exit 1
+          fi
+
+          dotnet nuget push "artifacts/packages/FaceCrop.NET.${{ steps.version.outputs.current }}.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source "https://api.nuget.org/v3/index.json" \
+            --skip-duplicate
