@@ -40,9 +40,10 @@ public sealed record FaceCropResult
     public int ImageHeight { get; init; }
 
     /// <summary>
-    /// Width excluded from the right edge.
+    /// The area left after removing the margins, in source pixels. Faces are searched for and the crop is placed only inside it.
+    /// <see langword="null"/> if the image was not decoded or the margins left no pixels.
     /// </summary>
-    public int ExcludedRightPixels { get; init; }
+    public PixelRegion? UsableRegion { get; init; }
 
     /// <summary>
     /// The low-confidence recovery report when <see cref="Status"/> is <see cref="FaceCropStatus.FaceCropLowConfidenceFiltered"/>.

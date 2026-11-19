@@ -11,7 +11,7 @@ internal static class BatchCropRunner
     private const string ReportFileName = "crop_report.csv";
     private const string OutputSuffix = "_crop";
     private static readonly HashSet<string> s_extensions = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"];
-    private static readonly string[] s_reportHeader = ["input", "output", "status", "detected_faces", "crop_box", "detail", "excluded_right_px", "detections_json"];
+    private static readonly string[] s_reportHeader = ["input", "output", "status", "detected_faces", "crop_box", "detail", "usable_region", "detections_json"];
     private static readonly StringComparison s_pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     public static int Run(BatchCropSettings settings)
@@ -38,7 +38,7 @@ internal static class BatchCropRunner
             var status = result?.Status.Code ?? "exists";
             var detail = result?.Detail ?? "";
             counts[status] = counts.GetValueOrDefault(status) + 1;
-            report.WriteRow([source, destination, status, (result?.Faces.Count ?? 0).ToString(CultureInfo.InvariantCulture), result?.CropBox?.ToString() ?? "", detail, (result?.ExcludedRightPixels ?? 0).ToString(CultureInfo.InvariantCulture), result?.GetDiagnosticsJson() ?? "[]"]);
+            report.WriteRow([source, destination, status, (result?.Faces.Count ?? 0).ToString(CultureInfo.InvariantCulture), result?.CropBox?.ToString() ?? "", detail, result?.UsableRegion?.ToString() ?? "", result?.GetDiagnosticsJson() ?? "[]"]);
             Console.WriteLine($"[{status}] {name} {detail}");
         }
         Console.WriteLine($"Summary: {FormatCounts(counts)}");

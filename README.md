@@ -16,7 +16,7 @@ The repository also includes a console app that crops a whole folder in one run 
 - **Largest square, faces kept inside.** The side of the crop always equals the shorter side of the usable area. Within that, the crop is placed so that every face box and keypoint stays inside, as close as possible to the center of the eyes, nose, and mouth.
 - **Embedded face detector.** The BlazeFace short-range model is built into the assembly, so there is no model to download or locate. Pre- and post-processing follow MediaPipe's face detector: a letterboxed 128×128 input, SSD anchor decoding, and weighted non-maximum suppression.
 - **Tile verification.** When the full image does not yield exactly one face, overlapping tiles at two scales are scanned as well. A face is kept only when several distinct windows find it, which filters out one-off false detections.
-- **Right panel exclusion.** A flat-color panel attached to the right edge, such as the name strip of a card, is detected and kept out of the crop. The excluded width can also be set explicitly.
+- **Margins.** A percentage of the height or width can be removed from each edge before processing, so borders, captions, or name strips stay out of both detection and the crop.
 - **Low-confidence recovery.** If the faces cannot all fit in one square, lower-confidence faces are dropped one at a time until the rest fit. Every removed face is recorded in the result.
 - **Transparency and color profiles.** Transparent areas are kept or filled with a chosen color. EXIF orientation is applied, and the source ICC profile is carried over to the output.
 - **Cross-platform.** Runs on Windows (x64, ARM64), Linux (x64, ARM64), and macOS (ARM64).
@@ -29,10 +29,10 @@ FaceCrop.NET keeps as much of the image as possible by always using the largest 
 
 ## How the crop is chosen
 
-1. **Right panel.** The middle 70% of the rows are sampled. If the right edge has one flat color and that color covers most rows from a consistent boundary between 65% and 97% of the width, everything right of the boundary is excluded. Lettering printed over the panel is tolerated.
-2. **Face detection.** Transparent pixels are composited over white, and each detection window is shrunk to fit within `DetectSize` before it is passed to the model. If the full image does not yield exactly one face, square tiles with sides of 100% and 60% of the shorter side, overlapping by half, are scanned too. Hits of the same face are merged, and a face is kept only when at least `MinFaceVotes` distinct windows found it.
-3. **Square placement.** The side of the square equals the shorter of the usable width and the height. Among the positions that keep every face box and all six keypoints inside, the one that best centers the eyes, nose, and mouth is chosen.
-4. **When the faces do not fit.** Faces that reach into the right panel are clipped at its boundary; if they still do not fit, the crop is centered on the eyes, nose, and mouth. Otherwise, low-confidence recovery keeps a face scoring at least 0.90 as the anchor and removes faces scoring below 0.85 and at least 0.10 below the anchor. Faces sitting well below an anchor in the upper part of the image are removed first, then the lowest scores.
+1. **Margins.** The top and bottom margins are percentages of the height, and the left and right margins are percentages of the width. Each is rounded to whole pixels and removed from its edge. All later steps work only on the area that remains, while coordinates are still reported in source pixels.
+2. **Face detection.** Transparent pixels are composited over white, and each detection window is shrunk to fit within `DetectSize` before it is passed to the model. If the whole area does not yield exactly one face, square tiles with sides of 100% and 60% of its shorter side, overlapping by half, are scanned too. Hits of the same face are merged, and a face is kept only when at least `MinFaceVotes` distinct windows found it.
+3. **Square placement.** The side of the square equals the shorter side of the area. Among the positions inside the area that keep every face box and all six keypoints inside, the one that best centers the eyes, nose, and mouth is chosen. Parts of a face box that reach into the margins are ignored.
+4. **When the faces do not fit.** Low-confidence recovery keeps a face scoring at least 0.90 as the anchor and removes faces scoring below 0.85 and at least 0.10 below the anchor. Faces sitting well below an anchor in the upper part of the area are removed first, then the lowest scores.
 
 ## Getting started
 
@@ -68,6 +68,7 @@ var options = new FaceCropOptions
 {
     FaceSelection = FaceSelectionMode.Largest,
     NoFace = NoFaceMode.Center,
+    MarginRightPercent = 20,
     Background = RgbColor.White,
 };
 using var cropper = new FaceCropper(options);
@@ -123,8 +124,10 @@ Results are saved as `<name>_crop.webp` in `cards/cropped`, together with `crop_
 | `--overwrite` | | Off | Replaces existing results. Without it, images that already have a result are reported as `exists`. |
 | `--no-face` | `NoFace` | `skip` | `skip` writes nothing. `center` crops the centered square. |
 | `--faces` | `FaceSelection` | `all` | `all` keeps every face inside. `largest` keeps only the face with the largest box. |
-| `--right-strip` | `RightStrip` | `auto` | `auto` detects and excludes a flat-color panel on the right edge. `off` uses the full width. |
-| `--right-strip-px` | `RightStripPixels` | None | Excludes this many pixels from the right edge. Overrides `--right-strip`. |
+| `--margin-top` | `MarginTopPercent` | `0` | Percentage of the image height removed from the top edge before processing. |
+| `--margin-bottom` | `MarginBottomPercent` | `0` | Percentage of the image height removed from the bottom edge before processing. |
+| `--margin-left` | `MarginLeftPercent` | `0` | Percentage of the image width removed from the left edge before processing. |
+| `--margin-right` | `MarginRightPercent` | `0` | Percentage of the image width removed from the right edge before processing. |
 | `--confidence` | `MinDetectionConfidence` | `0.5` | Minimum detection score. Greater than 0 and at most 1. |
 | `--detect-size` | `DetectSize` | `1600` | Each detection window is shrunk to fit within this many pixels per side. At least 128. |
 | `--tile-detection` | `TileDetection` | `fallback` | `fallback` scans tiles when the full image does not yield exactly one face. `always` always scans them, and `off` never does. |
@@ -139,7 +142,6 @@ Results are saved as `<name>_crop.webp` in `cards/cropped`, together with `crop_
 | Status | Meaning |
 | --- | --- |
 | `face_crop` | The crop contains every selected face. |
-| `face_crop_strip_clipped` | The faces reach into the right panel, so the face region was clipped at the panel boundary. If it still did not fit, the crop was centered on the eyes, nose, and mouth. |
 | `face_crop_low_confidence_filtered` | The faces did not fit together, so lower-confidence faces were left out. `detail` contains the removal report as JSON. |
 | `center_fallback` | No face was found, and the centered square was used. |
 | `no_face` | No face was found, and nothing was written. |
@@ -155,7 +157,7 @@ Results are saved as `<name>_crop.webp` in `cards/cropped`, together with `crop_
 | `detected_faces` | Number of confirmed faces. |
 | `crop_box` | `(left, top, right, bottom)` in source pixels. The right and bottom edges are exclusive. |
 | `detail` | Detection pass and crop notes, the removal report, or the error message. |
-| `excluded_right_px` | Width excluded from the right edge. |
+| `usable_region` | Area left after removing the margins, as `(left, top, right, bottom)` in source pixels. |
 | `detections_json` | Box, scores, number of confirming windows, and keypoints of each face, in source pixels. |
 
 ## Notes
@@ -163,7 +165,7 @@ Results are saved as `<name>_crop.webp` in `cards/cropped`, together with `crop_
 - Images with more than one frame, such as animated WebP or multi-page TIFF, are reported as errors.
 - The console app processes `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, `.tif`, and `.tiff` files. Files inside the output folder and files whose names end with `_crop` are skipped.
 - Only the ICC profile is copied to the output. EXIF, XMP, and other metadata are not written.
-- The right panel detector looks for a single flat color and does not recognize text. For other layouts, set the width with `--right-strip-px` or `RightStripPixels`.
+- Margins must not be negative. The top and bottom margins together, and the left and right margins together, must each be less than 100.
 - BlazeFace short-range is designed for faces that take up a noticeable part of the image. Small faces in wide shots may be missed.
 
 ## License

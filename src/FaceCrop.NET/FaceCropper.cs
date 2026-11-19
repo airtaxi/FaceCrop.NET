@@ -4,12 +4,13 @@ using FaceCrop.Imaging;
 namespace FaceCrop;
 
 /// <summary>
-/// Finds faces and plans the largest square crop that keeps them inside, optionally excluding a flat-color panel on the right edge.
+/// Finds faces and plans the largest square crop that keeps them inside, after removing the configured margins from each edge.
 /// Instances are safe to use from multiple threads.
 /// </summary>
 public sealed class FaceCropper : IDisposable
 {
     private const int MinimumDetectSize = 128;
+    private const double FullPercent = 100;
     private readonly BlazeFaceDetector _detector;
     private readonly TiledFaceDetector _tiledDetector;
 
@@ -86,42 +87,52 @@ public sealed class FaceCropper : IDisposable
         var height = image.Height;
         progress.ImageWidth = width;
         progress.ImageHeight = height;
-        var usableWidth = Options.RightStripPixels is { } stripPixels ? width - stripPixels : Options.RightStrip == RightStripMode.Auto ? RightStripDetector.DetectUsableWidth(image) : width;
-        if (usableWidth <= 0) throw new FaceCropException("right_strip_excludes_entire_image");
-        progress.ExcludedRightPixels = width - usableWidth;
-        // Faces are detected on the full image; constraints overlapping the panel are clipped while planning.
-        var detection = _tiledDetector.Detect(image, Options.DetectSize, Options.TileDetection, Options.MinFaceVotes);
+        var usableRegion = GetUsableRegion(width, height);
+        progress.UsableRegion = usableRegion;
+        var detection = _tiledDetector.Detect(image, usableRegion, Options.DetectSize, Options.TileDetection, Options.MinFaceVotes);
         progress.Faces = detection.Faces;
         var detail = $"detection_pass={detection.DetectionPass}";
         if (detection.Faces.Count == 0)
         {
             if (Options.NoFace == NoFaceMode.Skip) return progress.ToResult(FaceCropStatus.NoFace, detail);
-            var centerX = usableWidth / 2.0;
-            var centerY = height / 2.0;
-            progress.CropBox = SquareCropPlanner.CropBox(usableWidth, height, centerX, centerY, centerX, centerY, centerX, centerY);
+            var centerX = (usableRegion.Left + usableRegion.Right) / 2.0;
+            var centerY = (usableRegion.Top + usableRegion.Bottom) / 2.0;
+            progress.CropBox = SquareCropPlanner.CropBox(usableRegion, centerX, centerY, centerX, centerY, centerX, centerY);
             return progress.ToResult(FaceCropStatus.CenterFallback, detail);
         }
         IReadOnlyList<FaceCandidate> selected = Options.FaceSelection == FaceSelectionMode.All ? detection.Faces : [detection.Faces.MaxBy(face => face.Box.Width * face.Box.Height)!];
-        FaceCropStatus status;
-        string cropDetail;
         try
         {
-            var plan = SquareCropPlanner.PlanFaceCrop(selected, width, height, usableWidth);
-            (progress.CropBox, status, cropDetail) = (plan.Box, plan.Status, plan.Detail);
+            progress.CropBox = SquareCropPlanner.PlanFaceCrop(selected, width, height, usableRegion);
+            return progress.ToResult(FaceCropStatus.FaceCrop, detail);
         }
         catch (FaceRegionDoesNotFitException exception)
         {
-            var recovery = SquareCropPlanner.RecoverLowConfidence(selected, width, height, usableWidth, exception.Message);
-            (progress.CropBox, progress.Recovery, status, cropDetail) = (recovery.Box, recovery, FaceCropStatus.FaceCropLowConfidenceFiltered, recovery.ToJson());
+            var recovery = SquareCropPlanner.RecoverLowConfidence(selected, width, height, usableRegion, exception.Message);
+            (progress.CropBox, progress.Recovery) = (recovery.Box, recovery);
+            return progress.ToResult(FaceCropStatus.FaceCropLowConfidenceFiltered, $"{detail}; {recovery.ToJson()}");
         }
-        return progress.ToResult(status, $"{detail}; {cropDetail}");
     }
+
+    private PixelRegion GetUsableRegion(int width, int height)
+    {
+        var usableRegion = new PixelRegion(GetMarginPixels(width, Options.MarginLeftPercent), GetMarginPixels(height, Options.MarginTopPercent), width - GetMarginPixels(width, Options.MarginRightPercent), height - GetMarginPixels(height, Options.MarginBottomPercent));
+        if (usableRegion.Width <= 0 || usableRegion.Height <= 0) throw new FaceCropException("margins_exclude_entire_image");
+        return usableRegion;
+    }
+
+    private static int GetMarginPixels(int length, double percent) => (int)Math.Round(length * percent / FullPercent, MidpointRounding.AwayFromZero);
 
     private static void Validate(FaceCropOptions options)
     {
         if (!(options.MinDetectionConfidence > 0f && options.MinDetectionConfidence <= 1f)) throw new ArgumentOutOfRangeException(nameof(options), options.MinDetectionConfidence, "MinDetectionConfidence must be in the range (0, 1].");
         if (options.DetectSize < MinimumDetectSize) throw new ArgumentOutOfRangeException(nameof(options), options.DetectSize, "DetectSize must be at least 128.");
-        if (options.RightStripPixels < 0) throw new ArgumentOutOfRangeException(nameof(options), options.RightStripPixels, "RightStripPixels must not be negative.");
+        if (options.MarginTopPercent is not >= 0) throw new ArgumentOutOfRangeException(nameof(options), options.MarginTopPercent, "MarginTopPercent must not be negative.");
+        if (options.MarginBottomPercent is not >= 0) throw new ArgumentOutOfRangeException(nameof(options), options.MarginBottomPercent, "MarginBottomPercent must not be negative.");
+        if (options.MarginLeftPercent is not >= 0) throw new ArgumentOutOfRangeException(nameof(options), options.MarginLeftPercent, "MarginLeftPercent must not be negative.");
+        if (options.MarginRightPercent is not >= 0) throw new ArgumentOutOfRangeException(nameof(options), options.MarginRightPercent, "MarginRightPercent must not be negative.");
+        if (options.MarginTopPercent + options.MarginBottomPercent is not < FullPercent) throw new ArgumentOutOfRangeException(nameof(options), options.MarginTopPercent + options.MarginBottomPercent, "MarginTopPercent and MarginBottomPercent must add up to less than 100.");
+        if (options.MarginLeftPercent + options.MarginRightPercent is not < FullPercent) throw new ArgumentOutOfRangeException(nameof(options), options.MarginLeftPercent + options.MarginRightPercent, "MarginLeftPercent and MarginRightPercent must add up to less than 100.");
         if (options.MinFaceVotes < 1) throw new ArgumentOutOfRangeException(nameof(options), options.MinFaceVotes, "MinFaceVotes must be at least 1.");
         ArgumentNullException.ThrowIfNull(options.Webp, nameof(options));
         if (options.Webp.Quality is < 0 or > 100) throw new ArgumentOutOfRangeException(nameof(options), options.Webp.Quality, "Webp.Quality must be between 0 and 100.");
@@ -134,7 +145,7 @@ public sealed class FaceCropper : IDisposable
 
         public int ImageHeight { get; set; }
 
-        public int ExcludedRightPixels { get; set; }
+        public PixelRegion? UsableRegion { get; set; }
 
         public IReadOnlyList<FaceCandidate> Faces { get; set; } = [];
 
@@ -150,7 +161,7 @@ public sealed class FaceCropper : IDisposable
             Faces = Faces,
             ImageWidth = ImageWidth,
             ImageHeight = ImageHeight,
-            ExcludedRightPixels = ExcludedRightPixels,
+            UsableRegion = UsableRegion,
             Recovery = Recovery
         };
 

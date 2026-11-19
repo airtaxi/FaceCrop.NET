@@ -22,7 +22,6 @@ The following parts of FaceCrop.NET are C# implementations written to produce th
 | `BlazeFaceDetector`, `SsdAnchors`, `WeightedNonMaxSuppression`, `LetterboxTransform` | Face detector pre- and post-processing | [MediaPipe](https://github.com/google-ai-edge/mediapipe), Copyright The MediaPipe Authors | Apache License 2.0 |
 | `TensorImageConverter`, `PerspectiveTransform` | Perspective transform, LU solve, and bilinear `warpPerspective` sampling | [OpenCV](https://github.com/opencv/opencv), Copyright OpenCV contributors | Apache License 2.0 |
 | `PillowResampler`, `AlphaCompositor` | Image resampling, `reduce`, `thumbnail` sizing, and `alpha_composite` | [Pillow](https://github.com/python-pillow/Pillow) | MIT-CMU License (text below) |
-| `ArrayMath` | Pairwise floating-point summation order | [NumPy](https://github.com/numpy/numpy), Copyright NumPy Developers | BSD 3-Clause License |
 
 ## Package dependencies
 

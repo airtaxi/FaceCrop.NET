@@ -8,5 +8,5 @@ namespace FaceCrop;
 /// <param name="Box">The face box in source image pixels.</param>
 /// <param name="SupportWindows">Number of detection windows that found the face.</param>
 /// <param name="LowerPositionPriority">The face sits well below an upper anchor face and was removed first.</param>
-/// <param name="UpperCandidateRemoved">The face was in the upper 45% of the image or above the anchor face.</param>
+/// <param name="UpperCandidateRemoved">The face was in the upper 45% of the area left after the margins, or above the anchor face.</param>
 public sealed record RemovedCandidate(double Score, double GapFromBest, FaceBox Box, int SupportWindows, bool LowerPositionPriority, bool UpperCandidateRemoved);

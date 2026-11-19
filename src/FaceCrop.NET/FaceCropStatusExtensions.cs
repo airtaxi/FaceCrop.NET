@@ -13,7 +13,6 @@ public static class FaceCropStatusExtensions
         public string Code => status switch
         {
             FaceCropStatus.FaceCrop => "face_crop",
-            FaceCropStatus.FaceCropStripClipped => "face_crop_strip_clipped",
             FaceCropStatus.FaceCropLowConfidenceFiltered => "face_crop_low_confidence_filtered",
             FaceCropStatus.CenterFallback => "center_fallback",
             FaceCropStatus.NoFace => "no_face",

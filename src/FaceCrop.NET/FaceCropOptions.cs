@@ -18,14 +18,28 @@ public sealed record FaceCropOptions
     public FaceSelectionMode FaceSelection { get; init; } = FaceSelectionMode.All;
 
     /// <summary>
-    /// Whether a flat-color panel on the right edge is detected and excluded. Defaults to <see cref="RightStripMode.Auto"/>.
+    /// Percentage of the image height removed from the top edge before processing. Faces are searched for and the crop is placed only in the area left after the margins.
+    /// Must not be negative, and together with <see cref="MarginBottomPercent"/> must be less than 100. Defaults to 0.
     /// </summary>
-    public RightStripMode RightStrip { get; init; } = RightStripMode.Auto;
+    public double MarginTopPercent { get; init; }
 
     /// <summary>
-    /// Width in pixels to exclude from the right edge. When set, it overrides <see cref="RightStrip"/>.
+    /// Percentage of the image height removed from the bottom edge before processing.
+    /// Must not be negative, and together with <see cref="MarginTopPercent"/> must be less than 100. Defaults to 0.
     /// </summary>
-    public int? RightStripPixels { get; init; }
+    public double MarginBottomPercent { get; init; }
+
+    /// <summary>
+    /// Percentage of the image width removed from the left edge before processing.
+    /// Must not be negative, and together with <see cref="MarginRightPercent"/> must be less than 100. Defaults to 0.
+    /// </summary>
+    public double MarginLeftPercent { get; init; }
+
+    /// <summary>
+    /// Percentage of the image width removed from the right edge before processing.
+    /// Must not be negative, and together with <see cref="MarginLeftPercent"/> must be less than 100. Defaults to 0.
+    /// </summary>
+    public double MarginRightPercent { get; init; }
 
     /// <summary>
     /// Minimum detection score in the range (0, 1]. Defaults to 0.5.

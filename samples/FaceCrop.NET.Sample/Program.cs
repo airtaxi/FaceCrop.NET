@@ -10,8 +10,10 @@ var recursiveOption = new Option<bool>("--recursive") { Description = "Include i
 var overwriteOption = new Option<bool>("--overwrite") { Description = "Replace existing output files." };
 var noFaceOption = new Option<string>("--no-face") { Description = "What to do when no face is found.", DefaultValueFactory = _ => "skip" };
 var facesOption = new Option<string>("--faces") { Description = "Faces the crop must contain.", DefaultValueFactory = _ => "all" };
-var rightStripOption = new Option<string>("--right-strip") { Description = "Detect and exclude a flat-color panel on the right edge.", DefaultValueFactory = _ => "auto" };
-var rightStripPixelsOption = new Option<int?>("--right-strip-px") { Description = "Width to exclude from the right edge, in pixels. Overrides --right-strip." };
+var marginTopOption = new Option<double>("--margin-top") { Description = "Percentage of the image height removed from the top edge before processing.", DefaultValueFactory = _ => 0 };
+var marginBottomOption = new Option<double>("--margin-bottom") { Description = "Percentage of the image height removed from the bottom edge before processing.", DefaultValueFactory = _ => 0 };
+var marginLeftOption = new Option<double>("--margin-left") { Description = "Percentage of the image width removed from the left edge before processing.", DefaultValueFactory = _ => 0 };
+var marginRightOption = new Option<double>("--margin-right") { Description = "Percentage of the image width removed from the right edge before processing.", DefaultValueFactory = _ => 0 };
 var confidenceOption = new Option<double>("--confidence") { Description = "Minimum detection score.", DefaultValueFactory = _ => 0.5 };
 var detectSizeOption = new Option<int>("--detect-size") { Description = "Maximum side of each detection window, in pixels.", DefaultValueFactory = _ => 1600 };
 var tileDetectionOption = new Option<string>("--tile-detection") { Description = "When to scan overlapping tiles.", DefaultValueFactory = _ => "fallback" };
@@ -21,7 +23,6 @@ var webpLosslessOption = new Option<bool>("--webp-lossless") { Description = "Sa
 var backgroundOption = new Option<string?>("--background") { Description = "#RRGGBB color for transparent areas. Transparency is kept by default." };
 noFaceOption.AcceptOnlyFromAmong("skip", "center");
 facesOption.AcceptOnlyFromAmong("largest", "all");
-rightStripOption.AcceptOnlyFromAmong("auto", "off");
 tileDetectionOption.AcceptOnlyFromAmong("fallback", "always", "off");
 
 var rootCommand = new RootCommand("Batch maximum-square face-aware cropping.")
@@ -33,8 +34,10 @@ var rootCommand = new RootCommand("Batch maximum-square face-aware cropping.")
     overwriteOption,
     noFaceOption,
     facesOption,
-    rightStripOption,
-    rightStripPixelsOption,
+    marginTopOption,
+    marginBottomOption,
+    marginLeftOption,
+    marginRightOption,
     confidenceOption,
     detectSizeOption,
     tileDetectionOption,
@@ -49,7 +52,10 @@ rootCommand.SetAction(parseResult =>
     var input = parseResult.GetRequiredValue(inputArgument);
     var confidence = parseResult.GetValue(confidenceOption);
     var detectSize = parseResult.GetValue(detectSizeOption);
-    var rightStripPixels = parseResult.GetValue(rightStripPixelsOption);
+    var marginTop = parseResult.GetValue(marginTopOption);
+    var marginBottom = parseResult.GetValue(marginBottomOption);
+    var marginLeft = parseResult.GetValue(marginLeftOption);
+    var marginRight = parseResult.GetValue(marginRightOption);
     var webpQuality = parseResult.GetValue(webpQualityOption);
     var minFaceVotes = parseResult.GetValue(minFaceVotesOption);
     var backgroundText = parseResult.GetValue(backgroundOption);
@@ -58,7 +64,8 @@ rootCommand.SetAction(parseResult =>
     string? error = null;
     if (!input.Exists) error = "Input must be a directory.";
     else if (!(confidence > 0 && confidence <= 1) || detectSize < 128) error = "confidence: (0, 1], detect-size: >= 128";
-    else if (rightStripPixels < 0) error = "right-strip-px must be >= 0";
+    else if (!(marginTop >= 0 && marginBottom >= 0 && marginLeft >= 0 && marginRight >= 0)) error = "margin-top, margin-bottom, margin-left and margin-right must be >= 0";
+    else if (!(marginTop + marginBottom < 100 && marginLeft + marginRight < 100)) error = "margin-top + margin-bottom and margin-left + margin-right must each be < 100";
     else if (webpQuality is < 0 or > 100) error = "webp-quality must be between 0 and 100";
     else if (minFaceVotes < 1) error = "min-face-votes must be >= 1";
     else if (!isBackgroundValid) error = "background must be #RRGGBB, for example \"#ffffff\"";
@@ -71,8 +78,10 @@ rootCommand.SetAction(parseResult =>
     {
         NoFace = parseResult.GetValue(noFaceOption) == "center" ? NoFaceMode.Center : NoFaceMode.Skip,
         FaceSelection = parseResult.GetValue(facesOption) == "largest" ? FaceSelectionMode.Largest : FaceSelectionMode.All,
-        RightStrip = parseResult.GetValue(rightStripOption) == "off" ? RightStripMode.Off : RightStripMode.Auto,
-        RightStripPixels = rightStripPixels,
+        MarginTopPercent = marginTop,
+        MarginBottomPercent = marginBottom,
+        MarginLeftPercent = marginLeft,
+        MarginRightPercent = marginRight,
         MinDetectionConfidence = (float)confidence,
         DetectSize = detectSize,
         TileDetection = parseResult.GetValue(tileDetectionOption) switch

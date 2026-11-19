@@ -16,29 +16,30 @@ public sealed class TiledFaceDetector(BlazeFaceDetector detector)
     private readonly BlazeFaceDetector _detector = detector ?? throw new ArgumentNullException(nameof(detector));
 
     /// <summary>
-    /// Detects faces and maps them to source image coordinates.
+    /// Detects faces inside <paramref name="area"/> and maps them to source image coordinates.
     /// </summary>
     /// <param name="image">The source image.</param>
+    /// <param name="area">The part of the image to scan, or <see langword="null"/> for the whole image.</param>
     /// <param name="detectSize">Each window is shrunk to fit inside this many pixels per side before detection.</param>
     /// <param name="mode">Whether tiles are scanned.</param>
     /// <param name="minimumVotes">Minimum number of distinct windows that must find a face when tiles are scanned.</param>
-    public TiledDetectionResult Detect(RgbaImage image, int detectSize = 1600, TileDetectionMode mode = TileDetectionMode.Fallback, int minimumVotes = 2)
+    public TiledDetectionResult Detect(RgbaImage image, PixelRegion? area = null, int detectSize = 1600, TileDetectionMode mode = TileDetectionMode.Fallback, int minimumVotes = 2)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentOutOfRangeException.ThrowIfLessThan(detectSize, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(minimumVotes, 1);
+        var scanArea = area ?? new PixelRegion(0, 0, image.Width, image.Height);
+        if (scanArea.Left < 0 || scanArea.Top < 0 || scanArea.Right > image.Width || scanArea.Bottom > image.Height || scanArea.Width <= 0 || scanArea.Height <= 0) throw new ArgumentOutOfRangeException(nameof(area), area, "The area must be non-empty and lie inside the image.");
         var flattened = AlphaCompositor.Flatten(image, RgbColor.White);
-        var width = image.Width;
-        var height = image.Height;
-        var faces = DetectWindow(flattened, new PixelRegion(0, 0, width, height), detectSize);
+        var faces = DetectWindow(flattened, scanArea, detectSize);
         if (mode == TileDetectionMode.Off || (faces.Count == 1 && mode == TileDetectionMode.Fallback)) return new TiledDetectionResult(faces, "full", faces.Count, 0);
-        // Both scales cover the whole image; overlapping windows avoid misses at tile edges.
+        // Both scales cover the whole area; overlapping windows avoid misses at tile edges.
         foreach (var scale in s_tileScales)
         {
-            var side = Math.Max(1, (int)Math.Round(Math.Min(width, height) * scale));
-            foreach (var top in GetWindowStarts(height, side))
+            var side = Math.Max(1, (int)Math.Round(Math.Min(scanArea.Width, scanArea.Height) * scale));
+            foreach (var top in GetWindowStarts(scanArea.Top, scanArea.Height, side))
             {
-                foreach (var left in GetWindowStarts(width, side))
+                foreach (var left in GetWindowStarts(scanArea.Left, scanArea.Width, side))
                 {
                     faces.AddRange(DetectWindow(flattened, new PixelRegion(left, top, left + side, top + side), detectSize));
                 }
@@ -78,26 +79,26 @@ public sealed class TiledFaceDetector(BlazeFaceDetector detector)
         return faces;
     }
 
-    private static SortedSet<int> GetWindowStarts(int length, int side)
+    private static SortedSet<int> GetWindowStarts(int start, int length, int side)
     {
-        var starts = new SortedSet<int> { length - side };
+        var starts = new SortedSet<int> { start + length - side };
         var step = Math.Max(1, side / 2);
-        for (var start = 0; start <= length - side; start += step) starts.Add(start);
+        for (var offset = 0; offset <= length - side; offset += step) starts.Add(start + offset);
         return starts;
     }
 
     private static bool IsSameFace(FaceCandidate first, FaceCandidate second)
     {
-        var a = first.Box;
-        var b = second.Box;
-        var intersectionWidth = Math.Max(0, Math.Min(a.OriginX + a.Width, b.OriginX + b.Width) - Math.Max(a.OriginX, b.OriginX));
-        var intersectionHeight = Math.Max(0, Math.Min(a.OriginY + a.Height, b.OriginY + b.Height) - Math.Max(a.OriginY, b.OriginY));
+        var firstBox = first.Box;
+        var secondBox = second.Box;
+        var intersectionWidth = Math.Max(0, Math.Min(firstBox.OriginX + firstBox.Width, secondBox.OriginX + secondBox.Width) - Math.Max(firstBox.OriginX, secondBox.OriginX));
+        var intersectionHeight = Math.Max(0, Math.Min(firstBox.OriginY + firstBox.Height, secondBox.OriginY + secondBox.Height) - Math.Max(firstBox.OriginY, secondBox.OriginY));
         var intersection = intersectionWidth * intersectionHeight;
-        var firstArea = a.Width * a.Height;
-        var secondArea = b.Width * b.Height;
+        var firstArea = firstBox.Width * firstBox.Height;
+        var secondArea = secondBox.Width * secondBox.Height;
         var intersectionOverUnion = intersection / Math.Max(1e-9, firstArea + secondArea - intersection);
         var containment = intersection / Math.Max(1e-9, Math.Min(firstArea, secondArea));
-        var nearCenter = Math.Abs(a.OriginX + a.Width / 2 - b.OriginX - b.Width / 2) < 0.25 * Math.Min(a.Width, b.Width) && Math.Abs(a.OriginY + a.Height / 2 - b.OriginY - b.Height / 2) < 0.25 * Math.Min(a.Height, b.Height);
+        var nearCenter = Math.Abs(firstBox.OriginX + firstBox.Width / 2 - secondBox.OriginX - secondBox.Width / 2) < 0.25 * Math.Min(firstBox.Width, secondBox.Width) && Math.Abs(firstBox.OriginY + firstBox.Height / 2 - secondBox.OriginY - secondBox.Height / 2) < 0.25 * Math.Min(firstBox.Height, secondBox.Height);
         return intersectionOverUnion > 0.3 || (containment > 0.8 && nearCenter);
     }
 }

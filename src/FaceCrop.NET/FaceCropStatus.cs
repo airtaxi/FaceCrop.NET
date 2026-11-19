@@ -11,11 +11,6 @@ public enum FaceCropStatus
     FaceCrop,
 
     /// <summary>
-    /// The selected faces overlap the excluded right panel, so the face region was clipped at its boundary.
-    /// </summary>
-    FaceCropStripClipped,
-
-    /// <summary>
     /// The faces did not fit together, so lower-confidence faces were dropped until they did.
     /// </summary>
     FaceCropLowConfidenceFiltered,

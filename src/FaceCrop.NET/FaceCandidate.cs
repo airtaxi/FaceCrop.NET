@@ -9,7 +9,7 @@ namespace FaceCrop;
 /// <param name="Box">Face box in source image pixels.</param>
 /// <param name="Keypoints">Six keypoints normalized to the source image, in detector order.</param>
 /// <param name="Scores">Detector scores for this face.</param>
-/// <param name="Region">The detection window (the full image or a tile) in which the face was found.</param>
+/// <param name="Region">The detection window (the whole scanned area or a tile) in which the face was found.</param>
 /// <param name="SupportWindows">Number of distinct detection windows that found this face.</param>
 public sealed record FaceCandidate(FaceBox Box, IReadOnlyList<NormalizedPoint> Keypoints, IReadOnlyList<double> Scores, PixelRegion Region, int SupportWindows)
 {
